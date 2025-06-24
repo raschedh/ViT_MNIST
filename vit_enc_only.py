@@ -4,6 +4,11 @@ from typing import Tuple
 from torch.utils.data import TensorDataset, DataLoader
 from utils import load_mnist
 from torch import Tensor 
+from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+import os
+from datetime import datetime
 
 # ----------------- ENCODER CLASS (a single encoder layer) AND ENCODER STACK CLASS (multiple stacked) -------------------------------
 class Encoder(nn.Module):
@@ -206,10 +211,21 @@ class VisionTransformer(nn.Module):
         return classes
 
 if __name__ == "__main__":
-    
+
     EPOCHS = 15
     BATCH_SIZE = 32
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Timestamped directories
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join("runs", f"vit_mnist_{timestamp}")
+    model_dir = os.path.join("models", f"vit_mnist_{timestamp}")
+
+    os.makedirs(run_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+
+    # TensorBoard writer setup
+    writer = SummaryWriter(log_dir=run_dir)
 
     # Load MNIST dataset
     x_train, y_train, x_test, y_test = load_mnist("MNIST_dataset")
@@ -228,7 +244,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
     # Model
-    model = VisionTransformer(image_shape=(28,28),
+    model = VisionTransformer(image_shape=(28, 28),
                               patch_size=14,
                               channels=1,
                               embed_dim=32,
@@ -241,6 +257,9 @@ if __name__ == "__main__":
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
+    best_test_loss = float('inf')
+    best_model_path = os.path.join(model_dir, "best_model.pth")
+
     # Training loop
     for epoch in range(EPOCHS):
         model.train()
@@ -248,36 +267,50 @@ if __name__ == "__main__":
         correct = 0
         total = 0
 
-        for images, labels in train_loader:
+        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{EPOCHS}]", leave=False)
+        for images, labels in loop:
             images, labels = images.to(DEVICE), labels.to(DEVICE)
 
-            # Forward pass
             outputs = model(images)
             loss = criterion(outputs, labels)
 
-            # Backward pass and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             total_loss += loss.item()
-
-            # Accuracy
             _, predicted = torch.max(outputs, dim=1)
             correct += (predicted == labels).sum().item()
             total += labels.size(0)
 
-        accuracy = 100 * correct / total
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {total_loss:.4f}, Accuracy: {accuracy:.2f}%")
+            loop.set_postfix(loss=loss.item())
 
+        train_accuracy = 100 * correct / total
+        avg_train_loss = total_loss / len(train_loader)
 
-    
+        # Evaluate on test set
+        model.eval()
+        test_loss = 0
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images, labels = images.to(DEVICE), labels.to(DEVICE)
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+                test_loss += loss.item()
 
-        
+        avg_test_loss = test_loss / len(test_loader)
 
+        # Logging to TensorBoard
+        writer.add_scalar("Loss/Train", avg_train_loss, epoch)
+        writer.add_scalar("Accuracy/Train", train_accuracy, epoch)
+        writer.add_scalar("Loss/Test", avg_test_loss, epoch)
 
+        print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, Test Loss: {avg_test_loss:.4f}")
 
+        # Save best model
+        if avg_test_loss < best_test_loss:
+            best_test_loss = avg_test_loss
+            torch.save(model.state_dict(), best_model_path)
+            print(f"--> Best model saved at epoch {epoch+1} with Test Loss: {best_test_loss:.4f}")
 
-
-
-
+    writer.close()

@@ -1,0 +1,6 @@
+# Ignore entire models and runs directories
+models/
+runs/
+
+# Ignore Python bytecode cache
+__pycache__/
