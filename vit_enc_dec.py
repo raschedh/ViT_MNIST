@@ -265,6 +265,7 @@ class VisionTransformer(nn.Module):
         # the labels will only have a max of 16 numbers
 
         self.linear = nn.Linear(embed_dim, self.vocab_size)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, image: Tensor, decoder_input: Tensor):
 
@@ -286,13 +287,17 @@ class VisionTransformer(nn.Module):
         image_patches = self.encoder_embed(image_patches)
         # inject patch class embedding and then positional embedding
         image_patches = self.encoder_pos_embed(image_patches)
+        image_patches = self.dropout(image_patches)  # dropout
 
         # send the projected patches through the encoder, the encoder preserves the embed_dim 
         # the patches are of shape (B, N, D) and the output is also (B, N, D) after the encoder as transformer encoder does not change shape        
         encoder_out = self.encoder_layers(image_patches)
+        encoder_out = self.dropout(encoder_out)
 
         decoder_embed = self.decoder_embed(decoder_input) # (B, T, D)
         decoder_embed = self.decoder_pos_embed(decoder_embed)  # (B, T, D)
+        decoder_embed = self.dropout(decoder_embed)   # ✅ decoder embedding dropout
+
         decoder_output = self.decoder_layers(decoder_embed, encoder_out)
 
         class_logits = self.linear(decoder_output)        
@@ -321,18 +326,18 @@ if __name__ == "__main__":
     train_dataset = CompositeMNISTDataset(
         path="MNIST_dataset/train",      # Path to train images, generated on the fly
         output_size=224,
-        min_digits=4,
-        max_digits=16,
         mode="train",
+        min_digits=2,
+        max_digits=4,
         train_samples=100000 # length of samples per epoch
     )
 
     test_dataset = CompositeMNISTDataset(
         path="composite_test_data.pt",      # Path to fixed test data
         output_size=224,
-        min_digits=4,
-        max_digits=16,
-        mode="test"
+        mode="test",
+        min_digits=None,
+        max_digits=None
     )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn)
@@ -344,10 +349,11 @@ if __name__ == "__main__":
                               channels=1,
                               embed_dim=32,
                               vocab_size=len(VOCAB), 
-                              encoder_layers=4,
-                              decoder_layers=1,
+                              encoder_layers=8,
+                              decoder_layers=8,
                               attention_heads=2)
 
+    print(f"Number of trainable params {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     model.to(DEVICE)
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss(ignore_index=VOCAB["<pad>"])
@@ -371,6 +377,7 @@ if __name__ == "__main__":
             images, targets = images.to(DEVICE), targets.to(DEVICE)
             decoder_input = targets[:, :-1]
             decoder_target = targets[:, 1:]
+
 
             logits, probs = model(images, decoder_input)
             logits_flat = logits.reshape(-1, logits.size(-1))

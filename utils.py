@@ -77,5 +77,5 @@ if __name__ == "__main__":
         output_file="composite_test_data.pt",
         output_size=224,
         min_digits=2,
-        max_digits=16
+        max_digits=4
     )

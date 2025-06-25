@@ -20,7 +20,7 @@ def collate_fn(batch):
 
 
 class CompositeMNISTDataset(Dataset):
-    def __init__(self, path: str, output_size: int, min_digits: int, max_digits: int, mode: str, train_samples: int = None):
+    def __init__(self, path: str, output_size: int, mode: str, min_digits: int, max_digits: int, train_samples: int = None):
         
         assert mode in {"train", "test"}
 
@@ -47,6 +47,13 @@ class CompositeMNISTDataset(Dataset):
             self.resize = T.Resize((output_size, output_size))
             self.train_samples = train_samples
 
+            # some common augmentations for each image, can add more here
+            self.augment = T.Compose([
+                T.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+                T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
+                T.RandomAdjustSharpness(sharpness_factor=2),
+            ])
+
     def __len__(self):
         return self.num_samples if self.mode == "test" else self.train_samples
 
@@ -65,12 +72,13 @@ class CompositeMNISTDataset(Dataset):
         grid_cols = ceil(sqrt(num_digits))
         grid_rows = ceil(num_digits / grid_cols)
         h, w = self.img_size
-        grid = torch.ones((grid_rows * h, grid_cols * w))
+        grid = torch.zeros((grid_rows * h, grid_cols * w)) # black background
 
         for i, digit_img in enumerate(selected_imgs):
             row, col = divmod(i, grid_cols)
             y0, x0 = row * h, col * w
-            grid[y0:y0 + h, x0:x0 + w] = digit_img
+            # Augment per digit (convert to 1xHxW tensor before applying)                
+            grid[y0:y0 + h, x0:x0 + w] = self.augment(digit_img.unsqueeze(0)).squeeze(0)
 
         resized = self.resize(grid.unsqueeze(0))
         label_sequence = ["<s>"] + [str(l) for l in selected_labels] + ["<eos>"]
