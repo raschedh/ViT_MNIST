@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 from datetime import datetime
-from dataloader import CompositeMNISTDataset
+from dataloader import CompositeMNISTDataset, collate_fn, VOCAB, IDX_TO_TOKEN
 
 
 # ----------------- DECODER CLASS (a single decoder layer) AND DECODER STACK CLASS (multiple stacked) -------------------------------
@@ -34,7 +34,7 @@ class Decoder(nn.Module):
 
     def forward(self, x: Tensor, encoder_output: Tensor):
         
-        x = self.masked_attention(x,x,x, mask = True) + x
+        x = self.masked_attention(x,x,x, apply_mask=True) + x
         x = self.layer_norm1(x)
 
         x = self.attention(x, encoder_output,encoder_output) + x
@@ -135,21 +135,28 @@ class MultiHeadAttention(nn.Module):
         self.D_per_head = self.embed_dim // self.n_heads
         self.linear_layer = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, queries: Tensor, keys: Tensor, values: Tensor, mask: bool = False):    
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor, apply_mask: bool = False):    
         
-        B, N, _ = queries.shape
+        B, N_q, _ = queries.shape
+        N_k = keys.shape[1]
+        N_v = values.shape[1] 
+        # for sake of showing we have N_v seperate 
+        # but it is same as N_k otherwise later (see later) matmul doesn't work
  
-        # these are of shape (B, N, D)
+        # these are of shape (B, N_{q,k,v}, D)
         Q = self.linear_q(queries)
         K = self.linear_k(keys)
         V = self.linear_v(values)
 
-        # reshape them from (B, N, D) to (B, N, heads, D_per_head) and then permute to get (B, heads, N, Dh)
-        Q = Q.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
-        K = K.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
-        V = V.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        # reshape them from (B, N_{q,k,v}, D) to (B, N_{q,k,v}, heads, Dh) and then permute to (B, heads, N_{q,k,v}, Dh)
+        Q = Q.reshape(B, N_q, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        K = K.reshape(B, N_k, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        V = V.reshape(B, N_v, self.n_heads, self.D_per_head).permute(0,2,1,3)
                                 
-        # multiply queries and keys so we have (B, heads, N, N)
+        # multiply queries and keys so we have 
+        # Q = (B, heads, N_q, Dh)
+        # K.transpose(-2,-1) = (B, heads, Dh, N_k)
+        # such that Q @ K.T = (B, heads, N_q, N_k)
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.D_per_head ** 0.5)
 
         # We need to add an upper triangular matrix of -inf (above the diagonal),
@@ -161,23 +168,32 @@ class MultiHeadAttention(nn.Module):
         #  [ 0,    0, -inf],
         #  [ 0,    0,    0]]
         # by default the mask is False
-        if mask:
-            mask_matrix = torch.triu(torch.ones(N, N), diagonal=1)
-            mask_matrix = mask_matrix.masked_fill(mask_matrix == 1, float("-inf"))
-            mask_matrix = mask_matrix.unsqueeze(0).unsqueeze(0)  # shape: (1, 1, N, N)
-            attention_scores = attention_scores + mask_matrix # torch takes care of broadcasting to (B, heads, N, N)
+
+        # note when we do masked attention N_q = N_k so it's square, 
+        # we do not need a mask for cross attention when N_q != N_k is not true necessarily 
+
+        if apply_mask:
+            mask = torch.triu(torch.ones(N_q, N_q), diagonal=1)
+            mask = mask.masked_fill(mask == 1, float("-inf"))
+            mask = mask.unsqueeze(0).unsqueeze(0)  # shape: (1, 1, N, N)
+            attention_scores = attention_scores + mask # torch takes care of broadcasting to (B, heads, N, N)
             
         # softmax across the last dim to get a prob. distribution, if mask the -inf turn to 0
         attn_weights = torch.softmax(attention_scores, dim=-1)
 
-        # attn_weights is of shape (B, heads, N, N) and V is of shape (B, heads, N, Dh) and  and the output needs to be (B, heads, N, Dh)
+        # attn_weights = (B, heads, N_q, N_k)
+        # V = (B, heads, N_v, Dh) 
+        # attn_weight @ V = (B, heads, N_q, Dh) as N_k == N_v otherwise it doesn't work especially for cross attention
+        # The decoder queries are "paying attention" to encoder keys.
+        # Cross attention then selects which of the encoder values are most important. We essentially select most important features
+        # from the encoder output.
         attention = torch.matmul(attn_weights, V)
 
-        # permute so we have (B, N, heads, D)
+        # permute so we have (B, heads, N_q, Dh) --> (B, N_q, heads, Dh)
         attention = attention.permute(0,2,1,3)
 
-        # aggregate across heads to get (B, N, embed_dim (total D))
-        attention = attention.reshape(B, N, self.embed_dim)
+        # aggregate across heads to get (B, N, D)
+        attention = attention.reshape(B, N_q, self.embed_dim)
 
         # pass through one last linear layer
         attention = self.linear_layer(attention)
@@ -212,7 +228,7 @@ class VisionTransformer(nn.Module):
         patch_size: int,
         channels: int,
         embed_dim: int,
-        vocab: dict, 
+        vocab_size: dict, 
         num_classes: int,
         encoder_layers: int,
         decoder_layers: int, 
@@ -230,10 +246,10 @@ class VisionTransformer(nn.Module):
 
         # linear layer to project the flattend patches across channels to D dimensional vectors for downstream encoder blocks
         # we need to pad with zeros to make it exactly divisible
-        self.encoder_embeddings = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
-        self.vocab = vocab 
+        self.encoder_embed = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
+        self.vocab_size = vocab_size 
         # we use the same embed dim as encoder projection but it doesn't have to be
-        self.decoder_embeddings = nn.Embedding(num_embeddings=len(self.vocab), embedding_dim=self.embed_dim)
+        self.decoder_embed = nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=self.embed_dim)
 
         self.decoder_layers = DecoderStack(num_layers=decoder_layers,
                                            embed_dim=self.embed_dim,
@@ -245,13 +261,13 @@ class VisionTransformer(nn.Module):
                                            attention_heads=attention_heads, 
                                            scale=4)
 
-        self.encoder_pos_embedding  = PositionEmbedding(embed_dim=self.embed_dim, max_len= self.N)
-        self.decoder_pos_embedding = PositionEmbedding(embed_dim=self.embed_dim, max_len=len(self.vocab))
+        self.encoder_pos_embed  = PositionEmbedding(embed_dim=self.embed_dim, max_len= self.N)
+        self.decoder_pos_embed = PositionEmbedding(embed_dim=self.embed_dim, max_len=20)
+        # the labels will only have a max of 16 numbers
 
         self.linear = nn.Linear(embed_dim, num_classes)
-        self.softmax = nn.Softmax(num_classes)
 
-    def forward(self, image: Tensor, targets: Tensor):
+    def forward(self, image: Tensor, decoder_input: Tensor):
 
         # split the image into N patches, it may be 3 dimensional
         # first we reshape into blocks so we get (Y blocks of height, P, X blocks along width, P, C)
@@ -268,22 +284,22 @@ class VisionTransformer(nn.Module):
         image_patches = image.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
 
         # pass them through the linear projection  - output is (batch_size, N, D)
-        projected_patches = self.encoder_embeddings(image_patches)
+        image_patches = self.encoder_embed(image_patches)
         # inject patch class embedding and then positional embedding
-        projected_patches_wpe = self.encoder_pos_embedding(projected_patches)
+        image_patches = self.encoder_pos_embed(image_patches)
 
         # send the projected patches through the encoder, the encoder preserves the embed_dim 
         # the patches are of shape (B, N, D) and the output is also (B, N, D) after the encoder as transformer encoder does not change shape        
-        encoder_output = self.encoder_layers(projected_patches_wpe)
+        encoder_out = self.encoder_layers(image_patches)
 
-        target_embeddings = self.decoder_embeddings(targets) # (B, T, D)
-        target_embeddings_wpe = self.decoder_pos_embedding(target_embeddings)  # (B, T, D)
-        decoder_output = self.decoder_layers(target_embeddings_wpe, encoder_output)
+        decoder_embed = self.decoder_embed(decoder_input) # (B, T, D)
+        decoder_embed = self.decoder_pos_embed(decoder_embed)  # (B, T, D)
+        decoder_output = self.decoder_layers(decoder_embed, encoder_out)
 
-        class_logits = self.linear(decoder_output)
-        class_probs = self.softmax(class_logits)
+        class_logits = self.linear(decoder_output)        
+        class_probs = torch.softmax(class_logits, dim=-1)  # for prob distribution visualisation
 
-        return class_probs
+        return class_logits, class_probs
 
 if __name__ == "__main__":
 
@@ -293,8 +309,8 @@ if __name__ == "__main__":
 
     # Timestamped directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("runs_composite", f"vit_mnist_{timestamp}")
-    model_dir = os.path.join("models_composite", f"vit_mnist_{timestamp}")
+    run_dir = os.path.join("runs_grid_data", f"vit_mnist_{timestamp}")
+    model_dir = os.path.join("models_grid_data", f"vit_mnist_{timestamp}")
 
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
@@ -308,7 +324,8 @@ if __name__ == "__main__":
         output_size=224,
         min_digits=4,
         max_digits=16,
-        mode="train"
+        mode="train",
+        train_samples=10000
     )
 
     test_dataset = CompositeMNISTDataset(
@@ -319,17 +336,15 @@ if __name__ == "__main__":
         mode="test"
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, collate_fn=collate_fn)
 
-    vocab = { "<s>": 0, "<eos>": 1, "0": 2, "1": 3, "2": 4, "3": 5, "4": 6, "5": 7, "6": 8, "7": 9, "8": 10, "9": 11}
-    
     # Model
-    model = VisionTransformer(image_shape=(28, 28),
+    model = VisionTransformer(image_shape=(224, 224),
                               patch_size=14,
                               channels=1,
                               embed_dim=32,
-                              vocab=vocab, 
+                              vocab_size=len(VOCAB), 
                               num_classes=10,
                               encoder_layers=1,
                               decoder_layers=1,
@@ -337,7 +352,7 @@ if __name__ == "__main__":
 
     model.to(DEVICE)
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=VOCAB["<pad>"])
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
     best_test_loss = float('inf')
@@ -346,46 +361,47 @@ if __name__ == "__main__":
     # Training loop
     for epoch in range(EPOCHS):
         model.train()
-        total_loss = 0
-        correct = 0
-        total = 0
 
-        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{EPOCHS}]", leave=False)
-        for images, labels in loop:
-            images, labels = images.to(DEVICE), labels.to(DEVICE)
+        train_bar = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{EPOCHS}]", leave=False)
+        train_loss = 0
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+        for images, targets in train_bar:
+            
+            print(images.shape, targets.shape)
+            images, targets = images.to(DEVICE), targets.to(DEVICE)
+
+            decoder_target = targets[:, 1:]  # shift targets for prediction
+            decoder_input = targets[:, :-1] # shift targets for input
+
+            logits, probs = model(images, decoder_input)
+            loss = criterion(logits.view(-1, logits.size(-1)), decoder_target.view(-1))
+            train_loss += loss.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
-            _, predicted = torch.max(outputs, dim=1)
-            correct += (predicted == labels).sum().item()
-            total += labels.size(0)
-
-            loop.set_postfix(loss=loss.item())
-
-        train_accuracy = 100 * correct / total
-        avg_train_loss = total_loss / len(train_loader)
+            train_bar.set_postfix(loss=loss.item())
+        
+        avg_train_loss = train_loss / len(train_loader)
 
         # Evaluate on test set
         model.eval()
         test_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
-                images, labels = images.to(DEVICE), labels.to(DEVICE)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
+                images, targets = images.to(DEVICE), targets.to(DEVICE)
+
+                logits, probs = model(images, targets)
+                decoder_target = targets[:, 1:]  # shift targets
+                loss = criterion(logits.view(-1, logits.size(-1)), decoder_target.view(-1))
+
                 test_loss += loss.item()
 
         avg_test_loss = test_loss / len(test_loader)
 
         # Logging to TensorBoard
         writer.add_scalar("Loss/Train", avg_train_loss, epoch)
-        writer.add_scalar("Accuracy/Train", train_accuracy, epoch)
         writer.add_scalar("Loss/Test", avg_test_loss, epoch)
 
         print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, Test Loss: {avg_test_loss:.4f}")

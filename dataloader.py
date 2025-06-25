@@ -6,9 +6,21 @@ from math import ceil, sqrt
 from torch.utils.data import Dataset
 import torchvision.transforms as T
 from torchvision.io import read_image
+from torch.nn.utils.rnn import pad_sequence
+
+VOCAB = {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "<pad>": 10, "<s>": 11, "<eos>": 12}
+IDX_TO_TOKEN = {idx: token for token, idx in VOCAB.items()}
+
+def collate_fn(batch):
+    images, labels = zip(*batch)
+    images = torch.stack(images, dim=0)
+    label_tensors = [torch.tensor([VOCAB[token] for token in seq], dtype=torch.long) for seq in labels]
+    labels_padded = pad_sequence(label_tensors, batch_first=True, padding_value=VOCAB["<pad>"])
+    return images, labels_padded
+
 
 class CompositeMNISTDataset(Dataset):
-    def __init__(self, path: str, output_size: int, min_digits: int, max_digits: int, mode: str):
+    def __init__(self, path: str, output_size: int, min_digits: int, max_digits: int, mode: str, train_samples: int = None):
         
         assert mode in {"train", "test"}
 
@@ -33,9 +45,10 @@ class CompositeMNISTDataset(Dataset):
             self.images = [read_image(p)[0].float() / 255.0 for p in self.paths]
             self.img_size = self.images[0].shape
             self.resize = T.Resize((output_size, output_size))
+            self.train_samples = train_samples
 
     def __len__(self):
-        return self.num_samples if self.mode == "test" else int(1e9)
+        return self.num_samples if self.mode == "test" else self.train_samples
 
     def __getitem__(self, idx):
         if self.mode == "test":
