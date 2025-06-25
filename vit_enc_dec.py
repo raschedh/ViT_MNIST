@@ -265,7 +265,7 @@ class VisionTransformer(nn.Module):
         self.decoder_pos_embed = PositionEmbedding(embed_dim=self.embed_dim, max_len=20)
         # the labels will only have a max of 16 numbers
 
-        self.linear = nn.Linear(embed_dim, num_classes)
+        self.linear = nn.Linear(embed_dim, self.vocab_size)
 
     def forward(self, image: Tensor, decoder_input: Tensor):
 
@@ -346,9 +346,9 @@ if __name__ == "__main__":
                               embed_dim=32,
                               vocab_size=len(VOCAB), 
                               num_classes=10,
-                              encoder_layers=1,
-                              decoder_layers=1,
-                              attention_heads=1)
+                              encoder_layers=2,
+                              decoder_layers=2,
+                              attention_heads=2)
 
     model.to(DEVICE)
     # Loss and optimizer
@@ -361,50 +361,92 @@ if __name__ == "__main__":
     # Training loop
     for epoch in range(EPOCHS):
         model.train()
-
         train_bar = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{EPOCHS}]", leave=False)
+
         train_loss = 0
+        correct_tokens = 0
+        total_tokens = 0
+        sequence_correct = 0
+        total_sequences = 0
 
         for images, targets in train_bar:
-            
-            print(images.shape, targets.shape)
             images, targets = images.to(DEVICE), targets.to(DEVICE)
-
-            decoder_target = targets[:, 1:]  # shift targets for prediction
-            decoder_input = targets[:, :-1] # shift targets for input
+            decoder_input = targets[:, :-1]
+            decoder_target = targets[:, 1:]
 
             logits, probs = model(images, decoder_input)
-            loss = criterion(logits.view(-1, logits.size(-1)), decoder_target.view(-1))
+            logits_flat = logits.reshape(-1, logits.size(-1))
+            target_flat = decoder_target.reshape(-1)
+
+            loss = criterion(logits_flat, target_flat)
             train_loss += loss.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+            # Compute accuracy
+            predictions = torch.argmax(logits, dim=-1)  # (B, T)
+            mask = (decoder_target != VOCAB["<pad>"])
+
+            correct_tokens += (predictions == decoder_target)[mask].sum().item()
+            total_tokens += mask.sum().item()
+
+            sequence_correct += ((predictions == decoder_target) | ~mask).all(dim=1).sum().item()
+            total_sequences += decoder_target.size(0)
+
             train_bar.set_postfix(loss=loss.item())
-        
+
+        avg_train_loss = train_loss / len(train_loader)
+        train_token_acc = correct_tokens / total_tokens
+        train_seq_acc = sequence_correct / total_sequences
         avg_train_loss = train_loss / len(train_loader)
 
         # Evaluate on test set
         model.eval()
         test_loss = 0
+        correct_tokens = 0
+        total_tokens = 0
+        sequence_correct = 0
+        total_sequences = 0
+
         with torch.no_grad():
-            for images, labels in test_loader:
+            for images, targets in test_loader:
                 images, targets = images.to(DEVICE), targets.to(DEVICE)
+                decoder_input = targets[:, :-1]
+                decoder_target = targets[:, 1:]
 
-                logits, probs = model(images, targets)
-                decoder_target = targets[:, 1:]  # shift targets
-                loss = criterion(logits.view(-1, logits.size(-1)), decoder_target.view(-1))
+                logits, probs = model(images, decoder_input)
+                logits_flat = logits.reshape(-1, logits.size(-1))
+                target_flat = decoder_target.reshape(-1)
 
+                loss = criterion(logits_flat, target_flat)
                 test_loss += loss.item()
 
+                predictions = torch.argmax(logits, dim=-1)
+                mask = (decoder_target != VOCAB["<pad>"])
+
+                correct_tokens += (predictions == decoder_target)[mask].sum().item()
+                total_tokens += mask.sum().item()
+
+                sequence_correct += ((predictions == decoder_target) | ~mask).all(dim=1).sum().item()
+                total_sequences += decoder_target.size(0)
+
         avg_test_loss = test_loss / len(test_loader)
+        test_token_acc = correct_tokens / total_tokens
+        test_seq_acc = sequence_correct / total_sequences
 
         # Logging to TensorBoard
         writer.add_scalar("Loss/Train", avg_train_loss, epoch)
         writer.add_scalar("Loss/Test", avg_test_loss, epoch)
+        writer.add_scalar("Accuracy/Train_Token", train_token_acc, epoch)
+        writer.add_scalar("Accuracy/Test_Token", test_token_acc, epoch)
+        writer.add_scalar("Accuracy/Train_Sequence", train_seq_acc, epoch)
+        writer.add_scalar("Accuracy/Test_Sequence", test_seq_acc, epoch)
 
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, Test Loss: {avg_test_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{EPOCHS}], "
+              f"Train Loss: {avg_train_loss:.4f}, Token Acc: {train_token_acc:.4f}, Seq Acc: {train_seq_acc:.4f}, "
+              f"Test Loss: {avg_test_loss:.4f}, Token Acc: {test_token_acc:.4f}, Seq Acc: {test_seq_acc:.4f}")
 
         # Save best model
         if avg_test_loss < best_test_loss:
