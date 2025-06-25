@@ -8,18 +8,20 @@ import torchvision.transforms as T
 from torchvision.io import read_image
 
 class CompositeMNISTDataset(Dataset):
-    def __init__(self, path: str, output_size: int, min_digits: int, max_digits: int, test_file: str = None):
+    def __init__(self, path: str, output_size: int, min_digits: int, max_digits: int, mode: str):
         
+        assert mode in {"train", "test"}
+
         self.output_size = output_size
         self.min_digits = min_digits
         self.max_digits = max_digits
-        self.test_file = test_file
-        self.mode = "train" if self.test_file is None else "test"
+        self.path = path
+        self.mode = mode
 
         if self.mode == "test":
             # Load pre-generated test set
-            print(f"Loading fixed test set from: {self.test_file}")
-            data = torch.load(self.test_file)
+            print(f"Loading fixed test set from: {self.path}")
+            data = torch.load(self.path)
             self.test_images = data["images"]
             self.test_labels = data["labels"]
             self.num_samples = len(self.test_labels)

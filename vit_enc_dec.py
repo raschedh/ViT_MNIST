@@ -305,23 +305,36 @@ if __name__ == "__main__":
     writer = SummaryWriter(log_dir=run_dir)
 
     # Create the dataset instance (adjust path as needed)
-    dataset = CompositeMNISTDataset(
-        path="MNIST_dataset",      # Path to folder containing train/0/, train/1/, etc.
+    train_dataset = CompositeMNISTDataset(
+        path="MNIST_dataset/train",      # Path to train images, generated on the fly
         output_size=224,
         min_digits=4,
-        max_digits=16
+        max_digits=16,
+        mode="train"
+    )
+
+    test_dataset = CompositeMNISTDataset(
+        path="composite_test_data.pt",      # Path to fixed test data
+        output_size=224,
+        min_digits=4,
+        max_digits=16,
+        mode="test"
     )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
+    vocab = { "<s>": 0, "<eos>": 1, "0": 2, "1": 3, "2": 4, "3": 5, "4": 6, "5": 7, "6": 8, "7": 9, "8": 10, "9": 11}
+    
     # Model
     model = VisionTransformer(image_shape=(28, 28),
                               patch_size=14,
                               channels=1,
                               embed_dim=32,
+                              vocab=vocab, 
                               num_classes=10,
                               encoder_layers=1,
+                              decoder_layers=1,
                               attention_heads=1)
 
     model.to(DEVICE)
@@ -331,21 +344,6 @@ if __name__ == "__main__":
 
     best_test_loss = float('inf')
     best_model_path = os.path.join(model_dir, "best_model.pth")
-
-    vocab = {
-        "<s>": 0,
-        "<eos>": 1,
-        "0": 2,
-        "1": 3,
-        "2": 4,
-        "3": 5,
-        "4": 6,
-        "5": 7,
-        "6": 8,
-        "7": 9,
-        "8": 10,
-        "9": 11
-        }
 
     # Training loop
     for epoch in range(EPOCHS):
