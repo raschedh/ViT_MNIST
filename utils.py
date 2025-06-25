@@ -51,7 +51,7 @@ def generate_fixed_mnist_grid_data(mnist_path: str, num_samples: int, output_fil
         grid_cols = ceil(sqrt(num_digits))
         grid_rows = ceil(num_digits / grid_cols)
         h, w = img_size
-        grid = torch.ones((grid_rows * h, grid_cols * w))  # white background
+        grid = torch.zeros((grid_rows * h, grid_cols * w))  # black background
 
         for j, digit_img in enumerate(selected_imgs):
             row, col = divmod(j, grid_cols)

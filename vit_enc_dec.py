@@ -173,7 +173,7 @@ class MultiHeadAttention(nn.Module):
         # we do not need a mask for cross attention when N_q != N_k is not true necessarily 
 
         if apply_mask:
-            mask = torch.triu(torch.ones(N_q, N_q), diagonal=1)
+            mask = torch.triu(torch.ones(N_q, N_q), diagonal=1).to(DEVICE)
             mask = mask.masked_fill(mask == 1, float("-inf"))
             mask = mask.unsqueeze(0).unsqueeze(0)  # shape: (1, 1, N, N)
             attention_scores = attention_scores + mask # torch takes care of broadcasting to (B, heads, N, N)
@@ -228,8 +228,7 @@ class VisionTransformer(nn.Module):
         patch_size: int,
         channels: int,
         embed_dim: int,
-        vocab_size: dict, 
-        num_classes: int,
+        vocab_size: int, 
         encoder_layers: int,
         decoder_layers: int, 
         attention_heads: int
@@ -325,7 +324,7 @@ if __name__ == "__main__":
         min_digits=4,
         max_digits=16,
         mode="train",
-        train_samples=10000
+        train_samples=100000 # length of samples per epoch
     )
 
     test_dataset = CompositeMNISTDataset(
@@ -345,9 +344,8 @@ if __name__ == "__main__":
                               channels=1,
                               embed_dim=32,
                               vocab_size=len(VOCAB), 
-                              num_classes=10,
-                              encoder_layers=2,
-                              decoder_layers=2,
+                              encoder_layers=4,
+                              decoder_layers=1,
                               attention_heads=2)
 
     model.to(DEVICE)
