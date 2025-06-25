@@ -77,8 +77,12 @@ class CompositeMNISTDataset(Dataset):
         for i, digit_img in enumerate(selected_imgs):
             row, col = divmod(i, grid_cols)
             y0, x0 = row * h, col * w
-            # Augment per digit (convert to 1xHxW tensor before applying)                
-            grid[y0:y0 + h, x0:x0 + w] = self.augment(digit_img.unsqueeze(0)).squeeze(0)
+            # Augment per digit (convert to 1xHxW tensor before applying) 
+            grid[y0:y0 + h, x0:x0 + w] = digit_img             
+            # grid[y0:y0 + h, x0:x0 + w] = self.augment(digit_img.unsqueeze(0)).squeeze(0)
+
+        # resized = self.resize(grid.unsqueeze(0))
+        # resized = torch.clamp((resized - resized.min()) / (resized.max() - resized.min() + 1e-8), min=0.0)  # Normalize
 
         resized = self.resize(grid.unsqueeze(0))
         label_sequence = ["<s>"] + [str(l) for l in selected_labels] + ["<eos>"]

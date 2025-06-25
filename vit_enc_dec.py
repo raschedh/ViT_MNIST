@@ -8,7 +8,7 @@ from tqdm import tqdm
 import os
 from datetime import datetime
 from dataloader import CompositeMNISTDataset, collate_fn, VOCAB, IDX_TO_TOKEN
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # ----------------- DECODER CLASS (a single decoder layer) AND DECODER STACK CLASS (multiple stacked) -------------------------------
 class Decoder(nn.Module):
@@ -307,7 +307,7 @@ class VisionTransformer(nn.Module):
 
 if __name__ == "__main__":
 
-    EPOCHS = 15
+    EPOCHS = 30
     BATCH_SIZE = 32
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         output_size=224,
         mode="train",
         min_digits=2,
-        max_digits=4,
+        max_digits=16,
         train_samples=100000 # length of samples per epoch
     )
 
@@ -345,19 +345,22 @@ if __name__ == "__main__":
 
     # Model
     model = VisionTransformer(image_shape=(224, 224),
-                              patch_size=14,
+                              patch_size=28,
                               channels=1,
-                              embed_dim=32,
+                              embed_dim=64,
                               vocab_size=len(VOCAB), 
                               encoder_layers=8,
                               decoder_layers=8,
                               attention_heads=2)
+
+    # model.load_state_dict(torch.load("models_grid_data/vit_mnist_20250625_172227/best_model.pth"))
 
     print(f"Number of trainable params {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     model.to(DEVICE)
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss(ignore_index=VOCAB["<pad>"])
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
     best_test_loss = float('inf')
     best_model_path = os.path.join(model_dir, "best_model.pth")
@@ -440,6 +443,9 @@ if __name__ == "__main__":
         avg_test_loss = test_loss / len(test_loader)
         test_token_acc = correct_tokens / total_tokens
         test_seq_acc = sequence_correct / total_sequences
+
+        # Scheduler step
+        scheduler.step(avg_test_loss)
 
         # Logging to TensorBoard
         writer.add_scalar("Loss/Train", avg_train_loss, epoch)

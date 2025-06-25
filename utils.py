@@ -58,6 +58,9 @@ def generate_fixed_mnist_grid_data(mnist_path: str, num_samples: int, output_fil
             y0, x0 = row * h, col * w
             grid[y0:y0 + h, x0:x0 + w] = digit_img
 
+        # resized = resize(grid.unsqueeze(0))  # Resize first
+        # resized = torch.clamp((resized - resized.min()) / (resized.max() - resized.min() + 1e-8), min=0.0)  # Normalize
+
         resized = resize(grid.unsqueeze(0))  # shape: (1, H, W)
         label_sequence = ["<s>"] + [str(l) for l in selected_labels] + ["<eos>"]
 
@@ -77,5 +80,5 @@ if __name__ == "__main__":
         output_file="composite_test_data.pt",
         output_size=224,
         min_digits=2,
-        max_digits=4
+        max_digits=16
     )
