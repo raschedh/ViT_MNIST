@@ -5,3 +5,5 @@ runs/
 # Ignore Python bytecode cache
 __pycache__/
 .DS_Store
+composite_test_data.pt 
+

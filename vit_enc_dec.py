@@ -9,6 +9,56 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 from datetime import datetime
+from dataloader import CompositeMNISTDataset
+
+
+# ----------------- DECODER CLASS (a single decoder layer) AND DECODER STACK CLASS (multiple stacked) -------------------------------
+class Decoder(nn.Module):
+    def __init__(self,
+                 embed_dim: int,
+                 attention_heads: int,
+                 scale: int):
+
+        super().__init__()
+
+        self.layer_norm1 = nn.LayerNorm(embed_dim)
+        self.layer_norm2 = nn.LayerNorm(embed_dim)
+        self.layer_norm3 = nn.LayerNorm(embed_dim)
+
+        self.masked_attention = MultiHeadAttention(attention_heads, embed_dim)
+        self.attention = MultiHeadAttention(attention_heads, embed_dim)
+
+        self.feed_forward = nn.Sequential(
+            nn.Linear(embed_dim, scale * embed_dim),
+            nn.GELU(),
+            nn.Linear(scale * embed_dim, embed_dim)
+        )
+
+    def forward(self, x: Tensor, encoder_output: Tensor):
+        
+        x = self.masked_attention(x,x,x, mask = True) + x
+        x = self.layer_norm1(x)
+
+        x = self.attention(x, encoder_output,encoder_output) + x
+        x = self.layer_norm2(x)
+
+        x = self.feed_forward(x) + x
+        x = self.layer_norm3(x)
+
+        return x
+
+class DecoderStack(nn.Module):
+    def __init__(self, num_layers: int, embed_dim: int, attention_heads: int, scale: int):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            Decoder(embed_dim, attention_heads, scale)
+            for _ in range(num_layers)
+        ])
+
+    def forward(self, x: Tensor, encoder_output: Tensor):
+        for layer in self.layers:
+            x = layer(x, encoder_output)
+        return x
 
 # ----------------- ENCODER CLASS (a single encoder layer) AND ENCODER STACK CLASS (multiple stacked) -------------------------------
 class Encoder(nn.Module):
@@ -87,7 +137,7 @@ class MultiHeadAttention(nn.Module):
         self.D_per_head = self.embed_dim // self.n_heads
         self.linear_layer = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, queries: Tensor, keys: Tensor, values: Tensor):    
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor, mask: bool = False):    
         
         B, N, _ = queries.shape
  
@@ -103,9 +153,23 @@ class MultiHeadAttention(nn.Module):
                                 
         # multiply queries and keys so we have (B, heads, N, N)
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.D_per_head ** 0.5)
-        
-        # APPLY SOFTMAX AFTER CONCAT
-        # softmax across the last dim to get a prob. distribution
+
+        # We need to add an upper triangular matrix of -inf (above the diagonal),
+        # so that softmax assigns zero probability to future tokens.
+        # The diagonal and lower triangle are allowed (not masked).
+        #
+        # For example, for a 3×3 sequence, the mask looks like:
+        # [[ 0, -inf, -inf],
+        #  [ 0,    0, -inf],
+        #  [ 0,    0,    0]]
+        # by default the mask is False
+        if mask:
+            mask_matrix = torch.triu(torch.ones(N, N), diagonal=1)
+            mask_matrix = mask_matrix.masked_fill(mask_matrix == 1, float("-inf"))
+            mask_matrix = mask_matrix.unsqueeze(0).unsqueeze(0)  # shape: (1, 1, N, N)
+            attention_scores = attention_scores + mask_matrix # torch takes care of broadcasting to (B, heads, N, N)
+            
+        # softmax across the last dim to get a prob. distribution, if mask the -inf turn to 0
         attn_weights = torch.softmax(attention_scores, dim=-1)
 
         # attn_weights is of shape (B, heads, N, N) and V is of shape (B, heads, N, Dh) and  and the output needs to be (B, heads, N, Dh)
@@ -150,8 +214,10 @@ class VisionTransformer(nn.Module):
         patch_size: int,
         channels: int,
         embed_dim: int,
+        vocab: dict, 
         num_classes: int,
         encoder_layers: int,
+        decoder_layers: int, 
         attention_heads: int
     ):
         super().__init__()
@@ -163,21 +229,31 @@ class VisionTransformer(nn.Module):
         self.channels = channels
         self.embed_dim = embed_dim
         self.N = self.patches_along_height * self.patches_along_width
-        # linear layer to project the flattend patches across channels to D dimensional vectors 
+
+        # linear layer to project the flattend patches across channels to D dimensional vectors for downstream encoder blocks
         # we need to pad with zeros to make it exactly divisible
-        self.project_flattened = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
+        self.encoder_embeddings = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
+        self.vocab = vocab 
+        # we use the same embed dim as encoder projection but it doesn't have to be
+        self.decoder_embeddings = nn.Embedding(num_embeddings=len(self.vocab), embedding_dim=self.embed_dim)
+
+        self.decoder_layers = DecoderStack(num_layers=decoder_layers,
+                                           embed_dim=self.embed_dim,
+                                           attention_heads=attention_heads,
+                                           scale=4)
 
         self.encoder_layers = EncoderStack(num_layers=encoder_layers, 
                                            embed_dim=self.embed_dim, 
                                            attention_heads=attention_heads, 
                                            scale=4)
 
-        self.position_embedding  = PositionEmbedding(embed_dim=self.embed_dim, max_len= self.N + 1)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
-        self.classification = nn.Linear(embed_dim, num_classes)
+        self.encoder_pos_embedding  = PositionEmbedding(embed_dim=self.embed_dim, max_len= self.N)
+        self.decoder_pos_embedding = PositionEmbedding(embed_dim=self.embed_dim, max_len=len(self.vocab))
 
+        self.linear = nn.Linear(embed_dim, num_classes)
+        self.softmax = nn.Softmax(num_classes)
 
-    def forward(self, image: Tensor):
+    def forward(self, image: Tensor, targets: Tensor):
 
         # split the image into N patches, it may be 3 dimensional
         # first we reshape into blocks so we get (Y blocks of height, P, X blocks along width, P, C)
@@ -194,22 +270,22 @@ class VisionTransformer(nn.Module):
         image_patches = image.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
 
         # pass them through the linear projection  - output is (batch_size, N, D)
-        projected_patches = self.project_flattened(image_patches)
-
+        projected_patches = self.encoder_embeddings(image_patches)
         # inject patch class embedding and then positional embedding
-        cls_token = self.cls_token.expand(batch_size, 1, self.embed_dim)  # shape: (B, 1, D)
-        projected_patches = torch.concat([cls_token, projected_patches], dim=1)
-        projected_patches_wpe = self.position_embedding(projected_patches)
+        projected_patches_wpe = self.encoder_pos_embedding(projected_patches)
 
         # send the projected patches through the encoder, the encoder preserves the embed_dim 
-        # the patches are of shape (B, N+1, D) and the output is also (B, N+1, D) after the encoder as transformer encoder does not change shape        
+        # the patches are of shape (B, N, D) and the output is also (B, N, D) after the encoder as transformer encoder does not change shape        
         encoder_output = self.encoder_layers(projected_patches_wpe)
 
-        # extract the cls token from the encoded patches and pass this through a single linear layer
-        cls_token = encoder_output[:, 0, :] 
-        classes = self.classification(cls_token)
+        target_embeddings = self.decoder_embeddings(targets) # (B, T, D)
+        target_embeddings_wpe = self.decoder_pos_embedding(target_embeddings)  # (B, T, D)
+        decoder_output = self.decoder_layers(target_embeddings_wpe, encoder_output)
 
-        return classes
+        class_logits = self.linear(decoder_output)
+        class_probs = self.softmax(class_logits)
+
+        return class_probs
 
 if __name__ == "__main__":
 
@@ -219,8 +295,8 @@ if __name__ == "__main__":
 
     # Timestamped directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("runs", f"vit_mnist_{timestamp}")
-    model_dir = os.path.join("models", f"vit_mnist_{timestamp}")
+    run_dir = os.path.join("runs_composite", f"vit_mnist_{timestamp}")
+    model_dir = os.path.join("models_composite", f"vit_mnist_{timestamp}")
 
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
@@ -228,18 +304,13 @@ if __name__ == "__main__":
     # TensorBoard writer setup
     writer = SummaryWriter(log_dir=run_dir)
 
-    # Load MNIST dataset
-    x_train, y_train, x_test, y_test = load_mnist("MNIST_dataset")
-
-    # Convert to tensors
-    x_train = torch.tensor(x_train, dtype=torch.float32)
-    y_train = torch.tensor(y_train, dtype=torch.long)
-    x_test = torch.tensor(x_test, dtype=torch.float32)
-    y_test = torch.tensor(y_test, dtype=torch.long)
-
-    # Create datasets and loaders
-    train_dataset = TensorDataset(x_train, y_train)
-    test_dataset = TensorDataset(x_test, y_test)
+    # Create the dataset instance (adjust path as needed)
+    dataset = CompositeMNISTDataset(
+        path="MNIST_dataset",      # Path to folder containing train/0/, train/1/, etc.
+        output_size=224,
+        min_digits=4,
+        max_digits=16
+    )
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
@@ -260,6 +331,21 @@ if __name__ == "__main__":
 
     best_test_loss = float('inf')
     best_model_path = os.path.join(model_dir, "best_model.pth")
+
+    vocab = {
+        "<s>": 0,
+        "<eos>": 1,
+        "0": 2,
+        "1": 3,
+        "2": 4,
+        "3": 5,
+        "4": 6,
+        "5": 7,
+        "6": 8,
+        "7": 9,
+        "8": 10,
+        "9": 11
+        }
 
     # Training loop
     for epoch in range(EPOCHS):
