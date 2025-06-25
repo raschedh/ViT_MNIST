@@ -1,10 +1,8 @@
 import torch 
 import torch.nn as nn
 from typing import Tuple
-from torch.utils.data import TensorDataset, DataLoader
-from utils import load_mnist
+from torch.utils.data import DataLoader
 from torch import Tensor 
-from torch.utils.data import TensorDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
