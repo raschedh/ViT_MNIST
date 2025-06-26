@@ -70,9 +70,13 @@ if st.button("Generate Random Grid and Predict"):
     predicted_labels = []
 
     with torch.no_grad():
+        # Encode the image once
+        patches = model.patch(sample_image)
+        encoder_out = model.encode(patches)
+
         for _ in range(20):
-            logits, _ = model(sample_image, decoder_input)
-            next_token_logits = logits[:, -1, :]
+            decoder_output = model.decode(decoder_input, encoder_out)
+            next_token_logits = model.linear(decoder_output[:, -1, :])  # Use only the last timestep
             prediction = torch.argmax(next_token_logits, dim=-1)
             predicted_labels.append(prediction.item())
             if prediction.item() == VOCAB["<eos>"]:
