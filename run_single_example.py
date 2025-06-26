@@ -57,11 +57,11 @@ if __name__ == "__main__":
                               decoder_layers=8,
                               attention_heads=2)
 
-    model.load_state_dict(torch.load("models_grid_data/vit_mnist_20250625_155804/best_model.pth"))
+    model.load_state_dict(torch.load("models_grid_data/vit_mnist_20250625_181541/best_model.pth"))
     model.to(DEVICE)
     model.eval()
 
-    sample_image, labels = generate_grid_sample(num_digits=4, image_paths=image_paths)
+    sample_image, labels = generate_grid_sample(num_digits=16, image_paths=image_paths)
 
     correct_tokens = 0
     total_tokens = len(labels) - 2

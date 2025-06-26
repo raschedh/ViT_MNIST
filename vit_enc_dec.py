@@ -10,6 +10,9 @@ from datetime import datetime
 from dataloader import CompositeMNISTDataset, collate_fn, VOCAB, IDX_TO_TOKEN
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 # ----------------- DECODER CLASS (a single decoder layer) AND DECODER STACK CLASS (multiple stacked) -------------------------------
 class Decoder(nn.Module):
     def __init__(self,
