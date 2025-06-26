@@ -165,7 +165,7 @@ class VisionTransformer(nn.Module):
         self.N = self.patches_along_height * self.patches_along_width
         # linear layer to project the flattend patches across channels to D dimensional vectors 
         # we need to pad with zeros to make it exactly divisible
-        self.project_flattened = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
+        self.encoder_embed = nn.Linear(self.patch_size **2 * self.channels, self.embed_dim)
 
         self.encoder_layers = EncoderStack(num_layers=encoder_layers, 
                                            embed_dim=self.embed_dim, 
@@ -193,9 +193,9 @@ class VisionTransformer(nn.Module):
 
         return patches
     
-    def encode(self, patches):
+    def encode(self, patches: Tensor):
         # pass them through the linear projection  - output is (batch_size, N, D)
-        embedded_patches = self.project_flattened(patches)
+        embedded_patches = self.encoder_embed(patches)
 
         # inject patch class embedding and then positional embedding
         cls_token = self.cls_token.expand(embedded_patches.shape[0], 1, self.embed_dim)  # shape: (B, 1, D)
@@ -205,6 +205,7 @@ class VisionTransformer(nn.Module):
         # send the embedded patches through the encoder, the encoder preserves the embed_dim 
         # the patches are of shape (B, N+1, D) and the output is also (B, N+1, D) after the encoder as transformer encoder does not change shape        
         encoder_out = self.encoder_layers(embedded_patches)
+
         return encoder_out
     
     def forward(self, image: Tensor):

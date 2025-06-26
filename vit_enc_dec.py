@@ -270,39 +270,52 @@ class VisionTransformer(nn.Module):
         self.linear = nn.Linear(embed_dim, self.vocab_size)
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, image: Tensor, decoder_input: Tensor):
+    def patch(self, image: Tensor):
 
         # split the image into N patches, it may be 3 dimensional
         # first we reshape into blocks so we get (Y blocks of height, P, X blocks along width, P, C)
         batch_size = image.shape[0]
-        image = image.reshape(batch_size, self.patches_along_height, self.patch_size, self.patches_along_width, self.patch_size, self.channels)
+        patches = image.reshape(batch_size, self.patches_along_height, self.patch_size, self.patches_along_width, self.patch_size, self.channels)
 
-        # we permute to get the group the patches to get a grid of patches to get (batch_size, Y blocks of height, X blocks along width, P, P, C)
-        image = image.permute(0, 1, 3, 2, 4, 5)
+        # we permute to get a grid of patches (batch_size, Y blocks of height, X blocks along width, P, P, C)
+        patches = patches.permute(0, 1, 3, 2, 4, 5)
 
         # we reshape to (batch_size, N, P, P, C) to go from a group of patches to a "list" of 2D patches
-        image = image.reshape(batch_size, self.N, self.patch_size, self.patch_size, self.channels)
+        patches = patches.reshape(batch_size, self.N, self.patch_size, self.patch_size, self.channels)
 
         # we flatten to (batch_size, N , P * P * C) to get a list of flattened patches
-        image_patches = image.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
+        patches = patches.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
+        return patches
+
+    def encode(self, patches: Tensor):
 
         # pass them through the linear projection  - output is (batch_size, N, D)
-        image_patches = self.encoder_embed(image_patches)
+        patches = self.encoder_embed(patches)
         # inject patch class embedding and then positional embedding
-        image_patches = self.encoder_pos_embed(image_patches)
-        image_patches = self.dropout(image_patches)  # dropout
+        patches = self.encoder_pos_embed(patches)
+        patches = self.dropout(patches)  # dropout
 
         # send the projected patches through the encoder, the encoder preserves the embed_dim 
         # the patches are of shape (B, N, D) and the output is also (B, N, D) after the encoder as transformer encoder does not change shape        
-        encoder_out = self.encoder_layers(image_patches)
+        encoder_out = self.encoder_layers(patches)
         encoder_out = self.dropout(encoder_out)
+
+        return encoder_out
+
+    def decode(self, decoder_input: Tensor, encoder_out: Tensor):
 
         decoder_embed = self.decoder_embed(decoder_input) # (B, T, D)
         decoder_embed = self.decoder_pos_embed(decoder_embed)  # (B, T, D)
         decoder_embed = self.dropout(decoder_embed)   #  decoder embedding dropout
-
         decoder_output = self.decoder_layers(decoder_embed, encoder_out)
 
+        return decoder_output
+
+    def forward(self, image: Tensor, decoder_input: Tensor):
+
+        patches = self.patch(image)
+        encoder_out = self.encode(patches)
+        decoder_output = self.decode(decoder_input, encoder_out)
         class_logits = self.linear(decoder_output)        
         class_probs = torch.softmax(class_logits, dim=-1)  # for prob distribution visualisation
 
