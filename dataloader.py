@@ -48,11 +48,11 @@ class CompositeMNISTDataset(Dataset):
             self.train_samples = train_samples
 
             # some common augmentations for each image, can add more here
-            self.augment = T.Compose([
-                T.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-                T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
-                T.RandomAdjustSharpness(sharpness_factor=2),
-            ])
+            # self.augment = T.Compose([
+            #     T.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            #     T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
+            #     T.RandomAdjustSharpness(sharpness_factor=2),
+            # ])
 
     def __len__(self):
         return self.num_samples if self.mode == "test" else self.train_samples
@@ -78,8 +78,8 @@ class CompositeMNISTDataset(Dataset):
             row, col = divmod(i, grid_cols)
             y0, x0 = row * h, col * w
             # Augment per digit (convert to 1xHxW tensor before applying) 
-            # grid[y0:y0 + h, x0:x0 + w] = digit_img             
-            grid[y0:y0 + h, x0:x0 + w] = self.augment(digit_img.unsqueeze(0)).squeeze(0)
+            grid[y0:y0 + h, x0:x0 + w] = digit_img             
+            # grid[y0:y0 + h, x0:x0 + w] = self.augment(digit_img.unsqueeze(0)).squeeze(0)
 
         # resized = self.resize(grid.unsqueeze(0))
         # resized = torch.clamp((resized - resized.min()) / (resized.max() - resized.min() + 1e-8), min=0.0)  # Normalize

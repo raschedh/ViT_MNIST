@@ -18,17 +18,20 @@ def main(config=None):
 
         # Move datasets here so they exist inside sweep runs
         train_dataset = CompositeMNISTDataset(
-            path="MNIST_dataset/train",
+            path="MNIST_dataset/train",      # Path to train images, generated on the fly
             output_size=224,
             mode="train",
             min_digits=2,
             max_digits=16,
-            train_samples=100000
+            train_samples=100000 # length of samples per epoch
         )
+
         test_dataset = CompositeMNISTDataset(
-            path="composite_test_data.pt",
+            path="composite_test_data.pt",      # Path to fixed test data
             output_size=224,
-            mode="test"
+            mode="test",
+            min_digits=None,
+            max_digits=None
         )
 
         train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, collate_fn=collate_fn)
@@ -118,3 +121,19 @@ def main(config=None):
                 "train_seq_acc": train_seq_acc,
                 "test_seq_acc": test_seq_acc
             })
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--patch_size", type=int)
+    parser.add_argument("--embed_dim", type=int)
+    parser.add_argument("--encoder_layers", type=int)
+    parser.add_argument("--decoder_layers", type=int)
+    parser.add_argument("--attention_heads", type=int)
+    parser.add_argument("--batch_size", type=int)
+    parser.add_argument("--lr", type=float)
+
+    args = parser.parse_args()
+    wandb.init(config=vars(args))
+    main(vars(args))

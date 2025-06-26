@@ -4,7 +4,7 @@ runs/
 
 models_grid_data/
 runs_grid_data/
-
+wandb/
 # Ignore Python bytecode cache
 __pycache__/
 .DS_Store
