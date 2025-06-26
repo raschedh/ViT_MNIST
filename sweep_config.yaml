@@ -1,0 +1,20 @@
+method: bayes
+metric:
+  name: test_loss
+  goal: minimize
+parameters:
+  patch_size:
+    values: [7, 14, 28]
+  embed_dim:
+    values: [16, 32, 64, 128]
+  encoder_layers:
+    values: [2, 4, 6, 8]
+  decoder_layers:
+    values: [2, 4, 6, 8]
+  attention_heads:
+    values: [1, 2, 4]
+  batch_size:
+    values: [16, 32]
+  lr:
+    min: 1e-5
+    max: 1e-3
