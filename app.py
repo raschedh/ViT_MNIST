@@ -65,13 +65,6 @@ if st.button("Generate Random Grid and Predict"):
     num_digits = random.randint(2, 16)
     sample_image, labels, raw_grid = generate_grid_sample(num_digits, image_paths)
 
-    # Display the image grid
-    st.subheader(f"Input Grid of {num_digits} Digits")
-    fig, ax = plt.subplots()
-    ax.imshow(raw_grid, cmap="gray")
-    ax.axis("off")
-    st.pyplot(fig)
-
     sample_image = sample_image.to(DEVICE)
     decoder_input = torch.tensor([[VOCAB["<s>"]]], device=DEVICE)
 
@@ -84,7 +77,6 @@ if st.button("Generate Random Grid and Predict"):
             prediction = torch.argmax(next_token_logits, dim=-1)
             predicted_labels.append(prediction.item())
             if prediction.item() == VOCAB["<eos>"]:
-                predicted_labels = predicted_labels[:-1]
                 break
             decoder_input = torch.cat([decoder_input, prediction.unsqueeze(0)], dim=1)
 
@@ -96,6 +88,20 @@ if st.button("Generate Random Grid and Predict"):
     test_token_acc = correct_tokens / total_tokens if total_tokens > 0 else 0.0
 
     st.subheader("Prediction Results")
-    st.write("**Predicted Tokens:**", [IDX_TO_TOKEN[i] for i in predicted_labels])
-    st.write("**Ground Truth:**", labels[1:-1])
+    pred_str = " ".join([IDX_TO_TOKEN[i] for i in predicted_labels if IDX_TO_TOKEN[i] not in ["<s>", "<eos>"]])
+    gt_str = " ".join(labels[1:-1])
+
+    st.markdown("**Ground Truth:**")
+    st.markdown(gt_str)
+
+    st.markdown("**Predicted Tokens:**")
+    st.markdown(pred_str)
+    
     st.write(f"**Token Accuracy:** {test_token_acc:.2%}")
+
+    # Display the image grid
+    st.subheader(f"Input Grid of {num_digits} Digits")
+    fig, ax = plt.subplots()
+    ax.imshow(raw_grid, cmap="gray")
+    ax.axis("off")
+    st.pyplot(fig)
