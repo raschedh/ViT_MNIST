@@ -175,40 +175,45 @@ class VisionTransformer(nn.Module):
         self.position_embedding  = PositionEmbedding(embed_dim=self.embed_dim, max_len= self.N + 1)
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
         self.classification = nn.Linear(embed_dim, num_classes)
-
-
-    def forward(self, image: Tensor):
-
+    
+    def patch(self, image: Tensor):
         # split the image into N patches, it may be 3 dimensional
         # first we reshape into blocks so we get (Y blocks of height, P, X blocks along width, P, C)
         batch_size = image.shape[0]
-        image = image.reshape(batch_size, self.patches_along_height, self.patch_size, self.patches_along_width, self.patch_size, self.channels)
+        patches = image.reshape(batch_size, self.patches_along_height, self.patch_size, self.patches_along_width, self.patch_size, self.channels)
 
-        # we permute to get the group the patches to get a grid of patches to get (batch_size, Y blocks of height, X blocks along width, P, P, C)
-        image = image.permute(0, 1, 3, 2, 4, 5)
+        # we permute (to group the patches) to get a grid of patches (batch_size, Y blocks of height, X blocks along width, P, P, C)
+        patches = patches.permute(0, 1, 3, 2, 4, 5)
 
         # we reshape to (batch_size, N, P, P, C) to go from a group of patches to a "list" of 2D patches
-        image = image.reshape(batch_size, self.N, self.patch_size, self.patch_size, self.channels)
+        patches = patches.reshape(batch_size, self.N, self.patch_size, self.patch_size, self.channels)
 
         # we flatten to (batch_size, N , P * P * C) to get a list of flattened patches
-        image_patches = image.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
+        patches = patches.reshape(batch_size, self.N, self.patch_size * self.patch_size * self.channels)  # (batch_size,, N, P²·C)
 
+        return patches
+    
+    def encode(self, patches):
         # pass them through the linear projection  - output is (batch_size, N, D)
-        projected_patches = self.project_flattened(image_patches)
+        embedded_patches = self.project_flattened(patches)
 
         # inject patch class embedding and then positional embedding
-        cls_token = self.cls_token.expand(batch_size, 1, self.embed_dim)  # shape: (B, 1, D)
-        projected_patches = torch.concat([cls_token, projected_patches], dim=1)
-        projected_patches_wpe = self.position_embedding(projected_patches)
+        cls_token = self.cls_token.expand(embedded_patches.shape[0], 1, self.embed_dim)  # shape: (B, 1, D)
+        embedded_patches = torch.concat([cls_token, embedded_patches], dim=1)
 
-        # send the projected patches through the encoder, the encoder preserves the embed_dim 
+        embedded_patches = self.position_embedding(embedded_patches)
+        # send the embedded patches through the encoder, the encoder preserves the embed_dim 
         # the patches are of shape (B, N+1, D) and the output is also (B, N+1, D) after the encoder as transformer encoder does not change shape        
-        encoder_output = self.encoder_layers(projected_patches_wpe)
+        encoder_out = self.encoder_layers(embedded_patches)
+        return encoder_out
+    
+    def forward(self, image: Tensor):
 
+        patches = self.patch(image)
+        encoder_output = self.encode(patches)
         # extract the cls token from the encoded patches and pass this through a single linear layer
         cls_token = encoder_output[:, 0, :] 
         classes = self.classification(cls_token)
-
         return classes
 
 if __name__ == "__main__":
