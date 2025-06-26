@@ -48,11 +48,11 @@ class CompositeMNISTDataset(Dataset):
             self.train_samples = train_samples
 
             # some common augmentations for each image, can add more here
-            self.augment = T.Compose([
-                T.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-                T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
-                T.RandomAdjustSharpness(sharpness_factor=2),
-            ])
+            # self.augment = T.Compose([
+            #     T.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+            #     T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
+            #     T.RandomAdjustSharpness(sharpness_factor=2),
+            # ])
 
     def __len__(self):
         return self.num_samples if self.mode == "test" else self.train_samples

@@ -8,7 +8,6 @@ from torchvision.io import read_image
 import torchvision.transforms as T
 from vit_enc_dec import VisionTransformer
 from dataloader import VOCAB, IDX_TO_TOKEN
-from PIL import Image
 import matplotlib.pyplot as plt
 
 # Load model once
@@ -97,7 +96,7 @@ if st.button("Generate Random Grid and Predict"):
     st.markdown("**Predicted Tokens:**")
     st.markdown(pred_str)
     
-    st.write(f"**Token Accuracy:** {test_token_acc:.2%}")
+    st.write(f"**Token Accuracy:** {test_token_acc:.0%}")
 
     # Display the image grid
     st.subheader(f"Input Grid of {num_digits} Digits")
