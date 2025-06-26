@@ -26,7 +26,6 @@ def load_mnist(path: str):
 
 
 # ------------------ CREATES FIXED TEST DATASET FOR EVALUATION -------------
-
 def generate_fixed_mnist_grid_data(mnist_path: str, num_samples: int, output_file: str,
                         output_size: int = 224, min_digits: int = 2, max_digits: int = 16):
 

@@ -296,7 +296,7 @@ class VisionTransformer(nn.Module):
 
         decoder_embed = self.decoder_embed(decoder_input) # (B, T, D)
         decoder_embed = self.decoder_pos_embed(decoder_embed)  # (B, T, D)
-        decoder_embed = self.dropout(decoder_embed)   # ✅ decoder embedding dropout
+        decoder_embed = self.dropout(decoder_embed)   #  decoder embedding dropout
 
         decoder_output = self.decoder_layers(decoder_embed, encoder_out)
 
