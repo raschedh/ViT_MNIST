@@ -87,40 +87,71 @@ class MultiHeadAttention(nn.Module):
         self.D_per_head = self.embed_dim // self.n_heads
         self.linear_layer = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, queries: Tensor, keys: Tensor, values: Tensor):    
+    def forward(self, queries: Tensor, keys: Tensor, values: Tensor, apply_mask: bool = False):    
         
-        B, N, _ = queries.shape
+        B, N_q, _ = queries.shape
+        N_k = keys.shape[1]
+        N_v = values.shape[1] 
+        # for sake of showing we have N_v seperate 
+        # but it is same as N_k otherwise later (see later) matmul doesn't work
  
-        # these are of shape (B, N, D)
+        # these are of shape (B, N_{q,k,v}, D)
         Q = self.linear_q(queries)
         K = self.linear_k(keys)
         V = self.linear_v(values)
 
-        # reshape them from (B, N, D) to (B, N, heads, D_per_head) and then permute to get (B, heads, N, Dh)
-        Q = Q.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
-        K = K.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
-        V = V.reshape(B, N, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        # reshape them from (B, N_{q,k,v}, D) to (B, N_{q,k,v}, heads, Dh) and then permute to (B, heads, N_{q,k,v}, Dh)
+        Q = Q.reshape(B, N_q, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        K = K.reshape(B, N_k, self.n_heads, self.D_per_head).permute(0,2,1,3)
+        V = V.reshape(B, N_v, self.n_heads, self.D_per_head).permute(0,2,1,3)
                                 
-        # multiply queries and keys so we have (B, heads, N, N)
+        # multiply queries and keys so we have 
+        # Q = (B, heads, N_q, Dh)
+        # K.transpose(-2,-1) = (B, heads, Dh, N_k)
+        # such that Q @ K.T = (B, heads, N_q, N_k)
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (self.D_per_head ** 0.5)
-        
-        # APPLY SOFTMAX AFTER CONCAT
-        # softmax across the last dim to get a prob. distribution
+
+        # We need to add an upper triangular matrix of -inf (above the diagonal),
+        # so that softmax assigns zero probability to future tokens.
+        # The diagonal and lower triangle are allowed (not masked).
+        #
+        # For example, for a 3×3 sequence, the mask looks like:
+        # [[ 0, -inf, -inf],
+        #  [ 0,    0, -inf],
+        #  [ 0,    0,    0]]
+        # by default the mask is False
+
+        # note when we do masked attention N_q = N_k so it's square, 
+        # we do not need a mask for cross attention when N_q != N_k is not true necessarily 
+
+        if apply_mask:
+            mask = torch.triu(torch.ones(N_q, N_q), diagonal=1).to(DEVICE)
+            mask = mask.masked_fill(mask == 1, float("-inf"))
+            mask = mask.unsqueeze(0).unsqueeze(0)  # shape: (1, 1, N, N)
+            attention_scores = attention_scores + mask # torch takes care of broadcasting to (B, heads, N, N)
+            
+        # softmax across the last dim to get a prob. distribution, if mask the -inf turn to 0
         attn_weights = torch.softmax(attention_scores, dim=-1)
 
-        # attn_weights is of shape (B, heads, N, N) and V is of shape (B, heads, N, Dh) and  and the output needs to be (B, heads, N, Dh)
+        # attn_weights = (B, heads, N_q, N_k)
+        # V = (B, heads, N_v, Dh) 
+        # attn_weight @ V = (B, heads, N_q, Dh) as N_k == N_v otherwise it doesn't work especially for cross attention
+        # The decoder queries are "paying attention" to encoder keys.
+        # Cross attention then selects which of the encoder values are most important. We essentially select most important features
+        # from the encoder output.
         attention = torch.matmul(attn_weights, V)
 
-        # permute so we have (B, N, heads, D)
+        # permute so we have (B, heads, N_q, Dh) --> (B, N_q, heads, Dh)
         attention = attention.permute(0,2,1,3)
 
-        # aggregate across heads to get (B, N, embed_dim (total D))
-        attention = attention.reshape(B, N, self.embed_dim)
+        # aggregate across heads to get (B, N, D)
+        attention = attention.reshape(B, N_q, self.embed_dim)
 
         # pass through one last linear layer
         attention = self.linear_layer(attention)
 
         return attention
+
 
 
 # ----------------- POSITIONAL EMBEDDING CLASS -------------------------------
