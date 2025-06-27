@@ -225,8 +225,8 @@ if __name__ == "__main__":
 
     # Timestamped directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("runs", f"vit_mnist_{timestamp}")
-    model_dir = os.path.join("models", f"vit_mnist_{timestamp}")
+    run_dir = os.path.join("training_runs/saved_runs", f"vit_mnist_{timestamp}")
+    model_dir = os.path.join("training_runs/saved_models", f"vit_mnist_{timestamp}")
 
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)

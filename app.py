@@ -6,8 +6,8 @@ from math import ceil, sqrt
 from glob import glob
 from torchvision.io import read_image
 import torchvision.transforms as T
-from vit_enc_dec import VisionTransformer
-from dataloader import VOCAB, IDX_TO_TOKEN
+from models.vit_enc_dec import VisionTransformer
+from models.dataloader import VOCAB, IDX_TO_TOKEN
 import matplotlib.pyplot as plt
 
 # Load model once
@@ -22,7 +22,7 @@ def load_model():
                               decoder_layers=8,
                               attention_heads=2)
 
-    model.load_state_dict(torch.load("best_model.pth"))
+    model.load_state_dict(torch.load("models/best_enc_dec.pth"))
     model.to(DEVICE)
     model.eval()
     return model

@@ -1,12 +1,9 @@
 # Ignore entire models and runs directories
-models/
-runs/
+models/training_runs/
+models/wandb/
+models/composite_test_data.pt 
 
-models_grid_data/
-runs_grid_data/
-wandb/
 # Ignore Python bytecode cache
 __pycache__/
 .DS_Store
-composite_test_data.pt 
 

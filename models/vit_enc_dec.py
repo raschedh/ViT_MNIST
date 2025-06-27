@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
 from datetime import datetime
-from dataloader import CompositeMNISTDataset, collate_fn, VOCAB, IDX_TO_TOKEN
+from models.dataloader import CompositeMNISTDataset, collate_fn, VOCAB, IDX_TO_TOKEN
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -329,8 +329,8 @@ if __name__ == "__main__":
 
     # Timestamped directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("runs_grid_data", f"vit_mnist_{timestamp}")
-    model_dir = os.path.join("models_grid_data", f"vit_mnist_{timestamp}")
+    run_dir = os.path.join("training_runs/saved_runs_grid_data", f"vit_mnist_{timestamp}")
+    model_dir = os.path.join("training_runs/saved_models_grid_data", f"vit_mnist_{timestamp}")
 
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)

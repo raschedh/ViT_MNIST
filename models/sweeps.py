@@ -4,7 +4,7 @@ import wandb
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
-from dataloader import CompositeMNISTDataset, collate_fn, VOCAB
+from models.dataloader import CompositeMNISTDataset, collate_fn, VOCAB
 from vit_enc_dec import VisionTransformer
 
 
