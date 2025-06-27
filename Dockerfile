@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir --upgrade pip \
         torch \
         torchvision \
         tqdm \
-        matplotlib
+        matplotlib \
+        tensorboard
 
 EXPOSE 8501
 
