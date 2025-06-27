@@ -76,7 +76,7 @@ if __name__ == "__main__":
     generate_fixed_mnist_grid_data(
         mnist_path="MNIST_dataset/test",
         num_samples=10000,
-        output_file="composite_test_data.pt",
+        output_file="models/composite_test_data.pt",
         output_size=224,
         min_digits=2,
         max_digits=16

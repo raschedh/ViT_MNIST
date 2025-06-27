@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/your-username/your-repo.git /app
+RUN git clone https://github.com/raschedh/ViT_MNIST.git /app
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir \
@@ -22,4 +22,5 @@ RUN pip install --no-cache-dir --upgrade pip \
         matplotlib
 
 EXPOSE 8501
+
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
