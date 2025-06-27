@@ -40,6 +40,12 @@ python models/vit_enc_dec.py
 To run the streamlit app:
 
 ```bash
+streamlit run app.py
+```
+
+Alternatively, the Dockerfile is a standalone file:
+
+```bash
 docker build -t vit-mnist-app .
 docker run -p 8501:8501 vit-mnist-app
 
