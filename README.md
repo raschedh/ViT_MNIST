@@ -14,7 +14,7 @@ The encoder-decoder model processes a grid of digit images to predict sequences 
 
 - **Encoder**: Based on the original ViT paper, using *pre-layer norm* with skip connections.
 - **Decoder**: Follows *post-layer norm* as in the original Transformer paper.
-- This implementation mixes both approaches. Feel free to change. 
+- This rpeo mixes both approaches for the encoder-decoder. Feel free to change. 
 
 ---
 
