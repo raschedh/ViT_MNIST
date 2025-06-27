@@ -28,7 +28,7 @@ python models/vit_enc.py
 
 # For encoder-decoder on digit grids
 python models/vit_enc_dec.py
-
+```
 ---
 
 ## Streamlit
