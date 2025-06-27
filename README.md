@@ -6,9 +6,7 @@ A custom implementation of Vision Transformer (ViT) for digit classification, ex
 
 ## 🚀 Overview
 
-This project reimplements the Vision Transformer architecture from the original [ViT paper](https://arxiv.org/abs/2010.11929), trained on the MNIST dataset for handwritten digit recognition. In addition to a standard ViT encoder, we extend the model into an encoder-decoder architecture inspired by the Transformer model from *Attention Is All You Need*.
-
-The encoder-decoder model processes a grid of digit images to predict sequences — similar to OCR-style tasks — and is useful for structured multi-digit input scenarios.
+This project reimplements the Vision Transformer architecture from the original [ViT paper](https://arxiv.org/abs/2010.11929), trained on the MNIST dataset for handwritten digit recognition. In addition to a standard ViT encoder, we extend the model into an encoder-decoder architecture inspired by the Transformer model from *Attention Is All You Need*. The encoder-decoder model processes a grid of digit images to predict sequences. Both implementations are coded from scratch (no AI!) following the original papers.
 
 ### 🔧 Architecture Notes
 
