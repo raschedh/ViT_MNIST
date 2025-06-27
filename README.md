@@ -20,6 +20,11 @@ The encoder-decoder model processes a grid of digit images to predict sequences 
 
 ## Training
 
+Create the val/test data: 
+```bash
+python models/utils.py
+```
+
 To train the models:
 
 ```bash
@@ -29,6 +34,7 @@ python models/vit_enc.py
 # For encoder-decoder on digit grids
 python models/vit_enc_dec.py
 ```
+
 ---
 
 ## Streamlit
