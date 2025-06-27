@@ -22,8 +22,8 @@ def load_model():
                               decoder_layers=8,
                               attention_heads=2)
 
-    model.load_state_dict(torch.load("models/best_enc_dec.pth"), map_location=DEVICE)
-    
+    model.load_state_dict(torch.load("models/best_enc_dec.pth", map_location=DEVICE))
+    print(DEVICE)
     model.to(DEVICE)
     model.eval()
     return model
