@@ -12,7 +12,7 @@ This project reimplements the Vision Transformer architecture from the original 
 
 - **Encoder**: Based on the original ViT paper, using *pre-layer norm* with skip connections.
 - **Decoder**: Follows *post-layer norm* as in the original Transformer paper.
-- This rpeo mixes both approaches for the encoder-decoder. Feel free to change. 
+- This repo mixes both approaches for the encoder-decoder. Feel free to change. 
 
 ---
 
