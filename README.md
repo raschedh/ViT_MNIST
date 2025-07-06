@@ -43,7 +43,7 @@ To run the streamlit app:
 streamlit run app.py
 ```
 
-Alternatively, the Dockerfile is a standalone file:
+Alternatively, the Dockerfile is standalone:
 
 ```bash
 docker build -t vit-mnist-app .
